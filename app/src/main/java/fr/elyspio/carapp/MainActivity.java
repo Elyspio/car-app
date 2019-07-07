@@ -1,6 +1,7 @@
 package fr.elyspio.carapp;
 
 import android.hardware.Sensor;
+
 import android.hardware.SensorManager;
 import android.os.Bundle;
 
@@ -10,6 +11,7 @@ import fr.elyspio.carapp.model.sensors.Accelerator;
 import fr.elyspio.carapp.model.sensors.SensorBuilder;
 import fr.elyspio.carapp.model.sensors.exceptions.DelayException;
 import fr.elyspio.carapp.model.sensors.exceptions.UndefinedSensorException;
+import fr.elyspio.carapp.model.sensors.observers.AccelerationObserver;
 
 public class MainActivity extends AppCompatActivity {
 
@@ -31,6 +33,10 @@ public class MainActivity extends AppCompatActivity {
                     .log()
                     .calibrationIteration(100)
                     .build();
+
+
+            AccelerationObserver obs = new AccelerationObserver();
+            accelerator.addObserver(obs);
 
 
         } catch (UndefinedSensorException | DelayException e) {

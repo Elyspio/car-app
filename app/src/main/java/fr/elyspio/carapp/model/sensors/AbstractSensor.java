@@ -6,27 +6,61 @@ import android.hardware.SensorEvent;
 import android.hardware.SensorEventListener;
 import android.hardware.SensorManager;
 
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collections;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Set;
+
+import fr.elyspio.carapp.model.sensors.observers.Sensorable;
+
 
 public abstract class AbstractSensor {
 
-    protected SensorManager manager;
-    protected Sensor sensor;
-    protected Context ctx;
-    protected int delay;
-    protected float[] offset;
-
+    private SensorManager manager;
+    private Sensor sensor;
+    private Context ctx;
+    private int delay;
+    private double[] offset;
+    private Set<Sensorable> observers;
+    private boolean calibrated;
 
     public AbstractSensor(Context ctx, int sensorType) {
         this(ctx, sensorType, SensorManager.SENSOR_DELAY_FASTEST);
     }
 
 
-    public AbstractSensor(Context ctx, int sensorType, int refreshRate) {
+    AbstractSensor(Context ctx, int sensorType, int refreshRate) {
         this.ctx = ctx;
         delay = refreshRate;
         manager = (SensorManager) ctx.getSystemService(Context.SENSOR_SERVICE);
         sensor = manager.getDefaultSensor(sensorType);
-        offset = new float[3];
+        offset = new double[3];
+        observers = new HashSet<>();
+        calibrated = false;
+        AbstractSensor self = this;
+        this.register(new SensorEventListener() {
+            @Override
+            public void onSensorChanged(SensorEvent sensorEvent) {
+                if(self.calibrated) {
+                    List<Double> values = new ArrayList<>();
+                    float[] floats = sensorEvent.values;
+                    for (int i = 0; i < floats.length; i++) {
+                        double val = floats[i] - offset[i];
+                        values.add(val);
+                    }
+                    self.notifySensorUpdate(values);
+
+                }
+            }
+
+            @Override
+            public void onAccuracyChanged(Sensor sensor, int i) {
+
+            }
+        });
+
     }
 
 
@@ -45,6 +79,10 @@ public abstract class AbstractSensor {
                 data[nbData] = data[nbData]++;
                 if (data[nbData] == iterations) {
                     self.unregister(this);
+                    for (int i = 0; i < nbData; i++) {
+                        self.offset[i] = data[i] / nbData;
+                    }
+                    self.calibrated = true;
                 }
             }
 
@@ -54,12 +92,26 @@ public abstract class AbstractSensor {
             }
         });
     }
-    public boolean register(SensorEventListener listener) {
+
+
+    private boolean register(SensorEventListener listener) {
         return manager.registerListener(listener, sensor, delay);
     }
 
-    public void unregister(SensorEventListener listener) {
+    private void unregister(SensorEventListener listener) {
         manager.unregisterListener(listener);
     }
 
+
+    public void removeObserver(Sensorable observer) {
+        this.observers.remove(observer);
+    }
+
+    public void addObserver(Sensorable observer) {
+        this.observers.add(observer);
+    }
+
+    public void notifySensorUpdate(List<Double> data) {
+       observers.forEach(obs -> obs.updateSensor(data));
+    }
 }
