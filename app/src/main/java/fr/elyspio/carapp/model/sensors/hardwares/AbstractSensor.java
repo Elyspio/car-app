@@ -1,14 +1,13 @@
-package fr.elyspio.carapp.model.sensors;
+package fr.elyspio.carapp.model.sensors.hardwares;
 
 import android.content.Context;
 import android.hardware.Sensor;
 import android.hardware.SensorEvent;
 import android.hardware.SensorEventListener;
 import android.hardware.SensorManager;
+import android.util.Log;
 
 import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.Collections;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
@@ -25,32 +24,41 @@ public abstract class AbstractSensor {
     private double[] offset;
     private Set<Sensorable> observers;
     private boolean calibrated;
+    private static String TAG = "AbstractSensor";
+    private double[] threshold;
 
-    public AbstractSensor(Context ctx, int sensorType) {
-        this(ctx, sensorType, SensorManager.SENSOR_DELAY_FASTEST);
+
+    public AbstractSensor(Context ctx, int sensorType, double[] threshold) {
+        this(ctx, sensorType, SensorManager.SENSOR_DELAY_FASTEST, threshold);
     }
 
 
-    AbstractSensor(Context ctx, int sensorType, int refreshRate) {
+    AbstractSensor(Context ctx, int sensorType, int refreshRate, double[] threshold) {
         this.ctx = ctx;
+        this.threshold = threshold;
         delay = refreshRate;
         manager = (SensorManager) ctx.getSystemService(Context.SENSOR_SERVICE);
         sensor = manager.getDefaultSensor(sensorType);
-        offset = new double[3];
         observers = new HashSet<>();
         calibrated = false;
         AbstractSensor self = this;
         this.register(new SensorEventListener() {
             @Override
             public void onSensorChanged(SensorEvent sensorEvent) {
-                if(self.calibrated) {
+                if (self.calibrated) {
                     List<Double> values = new ArrayList<>();
                     float[] floats = sensorEvent.values;
+                    boolean signifiant = false;
                     for (int i = 0; i < floats.length; i++) {
                         double val = floats[i] - offset[i];
+                        if (Math.abs(val) > self.threshold[i]) {
+                            signifiant = true;
+                        }
                         values.add(val);
                     }
-                    self.notifySensorUpdate(values);
+                    if (signifiant) {
+                        self.notifySensorUpdate(values);
+                    }
 
                 }
             }
@@ -65,23 +73,47 @@ public abstract class AbstractSensor {
 
 
     protected void calibrate(final int nbData, final int iterations) {
+        offset = new double[nbData];
+        Log.d(TAG, "calibrate THRES length: " + threshold.length + "  " + threshold[0]);
+        if (this.threshold.length == 1) {
+            double value = threshold[0];
+            this.threshold = new double[nbData];
+            for (int i = 0; i < nbData; i++) {
+                this.threshold[i] = value;
+            }
+        }
+        Log.d(TAG, String.format("calibrate: nb:%d for %d iterations", nbData, iterations));
         final float[] data = new float[nbData + 1];
         for (int i = 0; i < nbData + 1; i++) {
             data[i] = 0;
         }
         final AbstractSensor self = this;
+
         this.register(new SensorEventListener() {
             @Override
             public void onSensorChanged(SensorEvent event) {
-                for (int i = 0; i < event.values.length; i++) {
-                    data[i] += event.values[i];
+                Log.d(TAG, "onSensorChanged: New Data");
+                if (!calibrated) {
+                    if (data.length + 1 == event.values.length) {
+                        for (int i = 0; i < data.length; i++) {
+                            data[i] += event.values[i];
+                        }
+                        data[data.length - 1] += 1;
+                    } else {
+                        Log.e(TAG, "checkCalibration: error no same length for new and past data");
+                    }
+
+                } else {
+                    Log.e(TAG, "checkCalibration: sensor is already calibrated");
                 }
-                data[nbData] = data[nbData]++;
+                data[nbData] += 1;
+                Log.d(TAG, String.format("onSensorChanged: calibated: %s/%d", data[nbData], iterations));
                 if (data[nbData] == iterations) {
                     self.unregister(this);
                     for (int i = 0; i < nbData; i++) {
-                        self.offset[i] = data[i] / nbData;
+                        self.offset[i] = data[i] / iterations;
                     }
+                    Log.d(TAG, "onSensorChanged: calibration done");
                     self.calibrated = true;
                 }
             }
@@ -112,6 +144,6 @@ public abstract class AbstractSensor {
     }
 
     public void notifySensorUpdate(List<Double> data) {
-       observers.forEach(obs -> obs.updateSensor(data));
+        observers.forEach(obs -> obs.updateSensor(data));
     }
 }
